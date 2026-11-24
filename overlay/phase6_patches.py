@@ -3,6 +3,9 @@ base = Path('composeApp/src/commonMain/kotlin/com/nuvio/app/features/player')
 streams = base.parent/'streams'
 patches = {
     streams/'StreamsRepository.kt': [
+        ('import com.nuvio.app.features.player.PlayerSettingsRepository\n',
+         'import com.nuvio.app.features.player.PlayerSettingsRepository\nimport com.nuvio.app.features.player.streamAutoPlayFallbackActive\n'),
+
         ('            var autoSelectTriggered = false\n            var timeoutElapsed = false\n',
          '            val personalSelectionProfile = ProfileRepository.activeProfileId\n            var autoSelectTriggered = false\n            var timeoutElapsed = false\n'),
         ('                    activeResolverProviderId = debridSettings.activeResolverProviderId,\n                )\n\n            fun settleAutoPlay',
