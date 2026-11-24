@@ -1,0 +1,4 @@
+module MPVCallbackFixture {
+    header "fixture.h"
+    export *
+}

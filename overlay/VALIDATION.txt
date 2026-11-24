@@ -1,0 +1,27 @@
+PASS: 11 diagnostic summary assertions
+PASS: 18 playback diagnostic assertions
+PASS: 21 feature policy assertions
+PASS: 22 handover assertions
+PASS: 19 handover readback assertions
+PASS: 41 history and sleep timer assertions
+PASS: 56 personal selection/history assertions
+PASS: 35 skip and preload identity assertions
+PASS: 35 subtitle sync and resume assertions
+PASS: 21 preparation and resume assertions
+PASS: 26 recovery policy assertions
+PASS: 22 persistence assertions
+PASS: 27 native cache policy assertions
+PASS: 33 native playback assertions
+PASS: native resume policy 17 assertions
+PASS: 24 native event batch assertions
+PASS: 35 native convenience assertions
+PASS: 22 low-power buffer assertions
+PASS: 27 encoded-bar assertions
+PASS: 27 reusable byte-cache assertions
+PASS: 30 range-reader assertions
+PASS: 15 HTTP transport request assertions
+PASS: 8 URLSession delegate and connection-reuse checks (mock responses)
+PASS: 20 C-to-Swift callback fixture checks (not actual libmpv)
+PASS: synthetic overlay dry-run, application, feature anchors and repeat guard
+
+612 standalone assertions/checks passed. Synthetic patch application passed. No actual checkout application, Xcode compile, live HTTP server integration, real bundled libmpv callback compilation, IPA, or device testing.
