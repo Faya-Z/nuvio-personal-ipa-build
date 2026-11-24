@@ -1,2 +1,2 @@
-Phase 17 full unsigned iOS device build
-Request: 2026-11-24; include Gradle configuration and Kotlin import fixes.
+Hybrid v3 + Smart Stream Health — unsigned candidate
+Request 2026-11-24: explicit debug framework link, fixed bundle identifiers, verbose Gradle logs; bypass previous release-link timeout.
