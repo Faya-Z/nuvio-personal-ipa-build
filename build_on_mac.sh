@@ -29,6 +29,11 @@ value=base64.b64decode(os.environ['NUVIO_LOCAL_PROPERTIES_BASE64'],validate=True
 pathlib.Path(sys.argv[1]).write_text('\n'.join(line for line in value.splitlines() if not re.match(r'^\s*(sdk\.dir|NUVIO_RELEASE_STORE_FILE)\s*=',line))+'\n')
 PY
 fi
+# Gradle validates this declared input even when optional credentials are absent.
+# Preserve any supplied configuration and create an empty file only if missing.
+if [[ ! -f "$SRC/local.properties" ]]; then
+  touch "$SRC/local.properties"
+fi
 cd "$SRC"
 ./scripts/prepare-ios-dependencies.sh
 # Build Kotlin independently to capture its full compiler diagnostic before Xcode packaging.
