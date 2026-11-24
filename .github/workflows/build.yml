@@ -1,13 +1,6 @@
 name: Build Nuvio IPA
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'phase17-overlay.zip'
-      - 'overlay/**'
-      - 'build_on_mac.sh'
-      - 'check_ipa.py'
 permissions:
   contents: read
 concurrency:
