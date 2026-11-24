@@ -1,0 +1,57 @@
+name: Build Nuvio IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'overlay/**'
+      - 'build_on_mac.sh'
+      - 'check_ipa.py'
+permissions:
+  contents: read
+concurrency:
+  group: nuvio-ipa-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 85
+    env:
+      IOS_CONFIGURATION: Release
+      GRADLE_OPTS: -Dfile.encoding=UTF-8
+      NUVIO_GRADLE_JVMARGS: -Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M
+      NUVIO_KOTLIN_NATIVE_JVMARGS: -Xmx4608M
+      NUVIO_LOCAL_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check source overlay is present
+        run: test -f overlay/apply.py
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build and verify IPA
+        shell: bash
+        run: |
+          mkdir -p output
+          set -o pipefail
+          bash build_on_mac.sh 2>&1 | tee output/build.log
+      - name: Upload verified unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Nuvio-Phase17-IPA
+          path: |
+            output/Nuvio_Phase17_unsigned.ipa
+            output/SHA256.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload complete diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Nuvio-build-log
+          path: output/*.log
+          if-no-files-found: warn
+          retention-days: 7
