@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'phase17-overlay.zip'
       - 'overlay/**'
       - 'build_on_mac.sh'
       - 'check_ipa.py'
@@ -13,7 +14,45 @@ concurrency:
   group: nuvio-ipa-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      source_sha: ${{ steps.prepare.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: prepare
+        name: Import verified Phase 17 source (first run only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f overlay/apply.py ]]; then
+            test -f phase17-overlay.zip
+            echo '5bbb5ff40a47db76efc2139333e650f2a7070d9ec3c73d1bde0f53b424b1eb9a  phase17-overlay.zip' | sha256sum -c -
+            python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import zipfile, stat
+          with zipfile.ZipFile('phase17-overlay.zip') as z:
+              assert len(z.infolist()) == 80
+              assert sum(i.file_size for i in z.infolist()) < 2_000_000
+              for i in z.infolist():
+                  p = PurePosixPath(i.filename)
+                  assert p.parts and p.parts[0] == 'overlay' and '..' not in p.parts
+                  assert not stat.S_ISLNK(i.external_attr >> 16)
+                  assert not Path(i.filename).exists(), 'Refusing to overwrite an existing file'
+              z.extractall('.')
+          assert Path('overlay/apply.py').is_file()
+          PY
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add overlay
+            git commit -m 'Import verified Phase 17 source overlay'
+            git push origin HEAD:refs/heads/main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   build:
+    needs: prepare
     runs-on: xcode-27
     timeout-minutes: 85
     env:
@@ -24,6 +63,9 @@ jobs:
       NUVIO_LOCAL_PROPERTIES_BASE64: ${{ secrets.NUVIO_LOCAL_PROPERTIES_BASE64 }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
       - name: Check source overlay is present
         run: test -f overlay/apply.py
       - uses: actions/setup-java@v5
