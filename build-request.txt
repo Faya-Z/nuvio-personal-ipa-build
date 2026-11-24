@@ -1,0 +1,2 @@
+Phase 17 full unsigned iOS device build
+Request: 2026-11-24; include Gradle configuration and Kotlin import fixes.
