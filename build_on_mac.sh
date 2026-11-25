@@ -15,7 +15,16 @@ git -C "$SRC" checkout --detach FETCH_HEAD
 [[ $(git -C "$SRC" rev-parse HEAD) == "$PIN" ]]
 cd "$SRC"
 # No credentials are committed to the repository. Require an authorized config file.
-if [[ -n "${NUVIO_RUNTIME_PROPERTIES_FILE:-}" ]]; then
+if [[ -n "${NUVIO_LOCAL_PROPERTIES_BASE64:-}" ]]; then
+  umask 077
+  python3 - <<'DECODE'
+import os, base64
+from pathlib import Path
+data = base64.b64decode(os.environ["NUVIO_LOCAL_PROPERTIES_BASE64"], validate=True)
+data.decode("utf-8")
+Path("local.properties").write_bytes(data)
+DECODE
+elif [[ -n "${NUVIO_RUNTIME_PROPERTIES_FILE:-}" ]]; then
   cp "$NUVIO_RUNTIME_PROPERTIES_FILE" local.properties
 elif [[ -n "${NUVIO_RUNTIME_PROPERTIES:-}" ]]; then
   umask 077
@@ -35,6 +44,10 @@ for line in Path("local.properties").read_text().splitlines():
 missing = sorted(k for k in required if not values.get(k))
 if missing:
     raise SystemExit("Missing runtime configuration keys: " + ", ".join(missing))
+if __import__("os").environ.get("GITHUB_ACTIONS") == "true":
+    for v in values.values():
+        if v:
+            print("::add-mask::" + v.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
 print("Required runtime configuration present (values not logged)")
 CONFIG
 # Intentionally start from the upstream base of Hybrid v3, not Phase 17.
@@ -233,7 +246,7 @@ def patch_file(name, old, new):
     data = path.read_text()
     assert data.count(old) == 1, (name, old)
     path.write_text(data.replace(old, new, 1))
-patch_file("StreamModels.kt", "    val requestToken: String? = null,\n", "    val requestToken: String? = null,\n    val healthGeneration: Long = 0L,\n    val forceHealthRefresh: Boolean = false,\n")
+patch_file("StreamModels.kt", "    val overlayMessage: String? = null,\n", "    val overlayMessage: String? = null,\n    val healthGeneration: Long = 0L,\n    val forceHealthRefresh: Boolean = false,\n")
 patch_file("StreamsRepository.kt", "    private var activeRequestKey: String? = null\n", "    private var activeRequestKey: String? = null\n    private var healthGeneration = 0L\n")
 patch_file("StreamsRepository.kt", "            (currentState.groups.isNotEmpty() || currentState.emptyStateReason != null || currentState.isAnyLoading)\n", "            (currentState.isAnyLoading || ((currentState.groups.isNotEmpty() || currentState.emptyStateReason != null) && currentState.groups.none { !it.error.isNullOrBlank() }))\n")
 patch_file("StreamsRepository.kt", "        _uiState.value = StreamsUiState(requestToken = requestToken)\n", "        val generation = ++healthGeneration\n        _uiState.value = StreamsUiState(requestToken = requestToken, healthGeneration = generation, forceHealthRefresh = forceRefresh)\n")
