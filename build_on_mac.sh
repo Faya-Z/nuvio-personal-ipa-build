@@ -14,7 +14,29 @@ git -C "$SRC" fetch --depth=1 origin "$PIN"
 git -C "$SRC" checkout --detach FETCH_HEAD
 [[ $(git -C "$SRC" rev-parse HEAD) == "$PIN" ]]
 cd "$SRC"
-touch local.properties
+# No credentials are committed to the repository. Require an authorized config file.
+if [[ -n "${NUVIO_RUNTIME_PROPERTIES_FILE:-}" ]]; then
+  cp "$NUVIO_RUNTIME_PROPERTIES_FILE" local.properties
+elif [[ -n "${NUVIO_RUNTIME_PROPERTIES:-}" ]]; then
+  umask 077
+  printf '%s\n' "$NUVIO_RUNTIME_PROPERTIES" > local.properties
+else
+  echo "Missing authorized Nuvio runtime configuration; refusing to build a known-incomplete IPA." >&2
+  exit 2
+fi
+python3 - <<'CONFIG'
+from pathlib import Path
+required = {"NUVIO_SUPABASE_URL", "NUVIO_SUPABASE_ANON_KEY", "NUVIO_SUPABASE_FALLBACK_URL", "TMDB_API_KEY", "TRAKT_CLIENT_ID", "TRAKT_CLIENT_SECRET", "SIMKL_CLIENT_ID", "MDBLIST_CLIENT_ID", "INTRODB_API_URL", "IMDB_RATINGS_API_BASE_URL", "IMDB_TAPFRAME_API_BASE_URL", "PREMIUMIZE_CLIENT_ID"}
+values = {}
+for line in Path("local.properties").read_text().splitlines():
+    if "=" in line and not line.lstrip().startswith(("#", "!")):
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+missing = sorted(k for k in required if not values.get(k))
+if missing:
+    raise SystemExit("Missing runtime configuration keys: " + ", ".join(missing))
+print("Required runtime configuration present (values not logged)")
+CONFIG
 # Intentionally start from the upstream base of Hybrid v3, not Phase 17.
 python3 - <<'PY'
 from pathlib import Path
@@ -204,6 +226,36 @@ internal object PersonalStreamHealth {
     }
 }
 ''')
+
+# Correct source-search reuse and reset health checks on actual search generation changes.
+def patch_file(name, old, new):
+    path = base / name
+    data = path.read_text()
+    assert data.count(old) == 1, (name, old)
+    path.write_text(data.replace(old, new, 1))
+patch_file("StreamModels.kt", "    val requestToken: String? = null,\n", "    val requestToken: String? = null,\n    val healthGeneration: Long = 0L,\n    val forceHealthRefresh: Boolean = false,\n")
+patch_file("StreamsRepository.kt", "    private var activeRequestKey: String? = null\n", "    private var activeRequestKey: String? = null\n    private var healthGeneration = 0L\n")
+patch_file("StreamsRepository.kt", "            (currentState.groups.isNotEmpty() || currentState.emptyStateReason != null || currentState.isAnyLoading)\n", "            (currentState.isAnyLoading || ((currentState.groups.isNotEmpty() || currentState.emptyStateReason != null) && currentState.groups.none { !it.error.isNullOrBlank() }))\n")
+patch_file("StreamsRepository.kt", "        _uiState.value = StreamsUiState(requestToken = requestToken)\n", "        val generation = ++healthGeneration\n        _uiState.value = StreamsUiState(requestToken = requestToken, healthGeneration = generation, forceHealthRefresh = forceRefresh)\n")
+patch_file("StreamSearchSessions.kt", "            if (hasResults) session.completedAtMs = epochMs() else sessions.remove(key)\n", "            val allReported = session.progress.value.completions.size == session.totalTasks\n            val anyError = session.progress.value.completions.any { completion ->\n                when (completion) {\n                    is StreamLoadCompletion.Addon -> !completion.group.error.isNullOrBlank()\n                    is StreamLoadCompletion.PluginScraper -> !completion.error.isNullOrBlank()\n                }\n            }\n            if (hasResults && allReported && !anyError) session.completedAtMs = epochMs() else sessions.remove(key)\n")
+repo_file = base / 'StreamsRepository.kt'
+data = repo_file.read_text()
+import re
+data, count = re.subn(r'(StreamsUiState\(\n)(\s+)(requestToken = requestToken,\n)', r'\1\2\3\2healthGeneration = generation,\n\2forceHealthRefresh = forceRefresh,\n', data)
+assert count == 5, count
+repo_file.write_text(data)
+screen = base / 'StreamsScreen.kt'
+s = screen.read_text()
+assert s.count('uiState.requestToken) {') == 4
+s = s.replace('uiState.requestToken) {', 'uiState.requestToken, uiState.healthGeneration) {')
+s = s.replace('val known = targets.filter { PersonalStreamHealth.cached(it) == StreamHealthResult.MISSING }.map { it.url }.toSet()', 'val known = if (uiState.forceHealthRefresh) emptySet() else targets.filter { PersonalStreamHealth.cached(it) == StreamHealthResult.MISSING }.map { it.url }.toSet()')
+s = s.replace('failedHealthUrls = known', 'failedHealthUrls = failedHealthUrls.intersect(targets.map { it.url }.toSet()) + known')
+s = s.replace('var pending = targets.filter { PersonalStreamHealth.cached(it) == null }', 'var pending = if (uiState.forceHealthRefresh) targets else targets.filter { PersonalStreamHealth.cached(it) == null }')
+s = s.replace('PersonalStreamHealth.probe(target)', 'PersonalStreamHealth.probe(target, bypassCache = uiState.forceHealthRefresh)')
+screen.write_text(s)
+patch_file('PersonalStreamHealth.kt', 'suspend fun probe(target: StreamProbeTarget): StreamHealthResult {', 'suspend fun probe(target: StreamProbeTarget, bypassCache: Boolean = false): StreamHealthResult {')
+patch_file('PersonalStreamHealth.kt', 'fresh(target.url)?.let { return it }', 'if (!bypassCache) fresh(target.url)?.let { return it }')
+
 p=Path('iosApp/iosApp/Player/MPVPlayerBridge.swift')
 s=p.read_text()
 old='''            let pos = getDouble("time-pos")
